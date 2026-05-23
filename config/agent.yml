@@ -1,0 +1,26 @@
+# 大模型配置
+llm:
+  api_base: "https://api.openai.com/v1"
+  temperature: 0.1
+
+# RAG 配置
+rag:
+  docs_path: "./vector_db/docs"
+  db_path: "./vector_db/db"
+  chunk_size: 1000
+  chunk_overlap: 200
+
+# 向量库配置
+vector_db:
+  docs_path: "./vector_db/docs"
+  db_path: "./vector_db/db"
+  chunk_size: 1000
+  chunk_overlap: 200
+
+# 搜索工具
+search:
+  max_results: 3
+
+# 日志
+log:
+  level: "INFO"

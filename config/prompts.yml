@@ -1,0 +1,6 @@
+# main_prompt
+plan_prompt_path: prompts/plan_prompt.txt
+rag_prompt_path: prompts/rag_prompt.txt
+search_prompt_path: prompts/search_prompt.txt
+coder_prompt_path: prompts/coder_prompt.txt
+summary_prompt_path: prompts/summary_prompt.txt
