@@ -2,6 +2,25 @@ from .config_tool import prompts_config
 from .path_tool import get_abs_path
 from .log_tool import logger
 
+def get_router_prompts() -> str:
+    """
+    获取router提示词
+
+    Returns:
+        str: 返回提示词文本
+    """
+    try:
+        path = get_abs_path(prompts_config['router_prompt_path'])
+    except KeyError as e:
+        logger.error(f"prompts.yml缺少key:router_prompt_path")
+        raise e
+    
+    try:
+        return open(path,'r',encoding="utf-8").read()
+    except Exception as e:
+        logger.error(f"解析router_prompts失败,{str(e)}")
+        raise e
+
 def get_plan_prompts() -> str:
     """
     获取plan提示词

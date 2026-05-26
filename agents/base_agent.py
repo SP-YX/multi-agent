@@ -18,6 +18,11 @@ class BaseAgent(ABC):
         """初始化：注入全局模型实例。"""
         self.model = chat_model       # 共享的 LLM 实例
         self.agent = None             # 由子类 __init__ 中创建
+        self.memory_context = ""      # 会话记忆上下文
+
+    def set_memory_context(self, context: str):
+        """注入会话记忆上下文。"""
+        self.memory_context = context
 
     @abstractmethod
     def run(self, user_input: str, **kwargs):

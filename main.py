@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 # 抑制 Streamlit 在 CLI 模式下产生的 "missing ScriptRunContext" 警告
 logging.getLogger("streamlit.runtime.scriptrunner").setLevel(logging.ERROR)
 
-from graph.agent_graph import agent_graph
+from guardrails import Guardrails
 from agent_tools.middleware import get_perf_stats, get_token_usage
 
 # 加载 .env 中的 API Key 等环境变量
@@ -21,13 +21,17 @@ load_dotenv()
 
 
 def main():
-    """主循环：读取用户输入 → 调用 Agent Graph → 打印结果。"""
-    # 生成本次 CLI 会话的唯一 ID（用于记忆隔离）
+    """主循环：读取用户输入 → Guardrails 校验 → 调用 Agent Graph → 打印结果。"""
     session_id = str(uuid.uuid4())[:8]
+    guard = Guardrails()
 
     print("=" * 60)
     print("  LangChain 多智能体协作系统 v2.0")
     print(f"  Session: {session_id}")
+    if guard.enabled:
+        print(f"  护栏: 已启用 ({len(guard.input_rules)} 输入规则 + {len(guard.output_rules)} 输出规则)")
+    else:
+        print("  护栏: 未启用")
     print("=" * 60)
     print("输入 exit 退出\n")
 
@@ -38,16 +42,23 @@ def main():
         if not user_query:
             continue
 
+        ok, cleaned, violations = guard.pre_process(user_query, session_id)
+        if not ok:
+            print(f"\n[Guardrails Blocked] {violations[0].get('message', '输入被拦截')}")
+            continue
+
         print("\n--- 开始处理 ---\n")
 
         try:
-            # 调用 LangGraph 流水线
-            result = agent_graph.invoke({
-                "query": user_query,
+            result = guard.wrap_graph({
+                "query": cleaned,
                 "session_id": session_id,
             })
 
-            # 打印规划摘要和最终回答
+            if result.get("_guardrails_blocked"):
+                print(f"\n[Guardrails Blocked] {result.get('final_answer', '')}")
+                continue
+
             print("\n" + "=" * 60)
             print("  [规划结果]")
             print(result.get("sub_tasks", "")[:300])
@@ -59,7 +70,6 @@ def main():
         except Exception as e:
             print(f"\n[Error] {type(e).__name__}: {e}")
 
-    # 退出时打印性能统计
     print("\n性能统计:")
     for name, stats in get_perf_stats().items():
         print(f"  {name}: {stats['count']}次, 平均{stats['avg_ms']}ms, 最大{stats['max_ms']}ms")

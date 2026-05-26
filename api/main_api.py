@@ -10,7 +10,7 @@ FastAPI 后端接口服务 — 提供多智能体系统的 HTTP API。
 import uuid
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
-from graph.agent_graph import agent_graph
+from guardrails import Guardrails
 from agent_tools.middleware import get_perf_stats, get_token_usage
 
 app = FastAPI(
@@ -38,6 +38,8 @@ class TaskResp(BaseModel):
     search_result: str
     code_result: str
     final_answer: str
+    guardrails_blocked: bool = False
+    guardrails_violations: list = []
 
 
 class HealthResp(BaseModel):
@@ -60,16 +62,27 @@ def health_check():
 def run_task(req: TaskReq):
     """
     执行多智能体任务。
-    流程：计划 → RAG → 搜索 → 代码 → 汇总。
+    使用 Guardrails 对输入输出进行规则校验。
     Args:
         req: { query, session_id? }
     Returns: 全流程中间结果 + 最终回答
     """
-    # session_id 为空时自动生成
     session_id = req.session_id or str(uuid.uuid4())[:8]
+    guard = Guardrails()
+
+    ok, cleaned, in_violations = guard.pre_process(req.query, session_id)
+    if not ok:
+        return TaskResp(
+            session_id=session_id,
+            sub_tasks="", rag_result="", search_result="", code_result="",
+            final_answer=f"[Guardrails Blocked] {in_violations[0].get('message', '输入被拦截')}",
+            guardrails_blocked=True,
+            guardrails_violations=in_violations,
+        )
+
     try:
-        res = agent_graph.invoke({
-            "query": req.query,
+        res = guard.wrap_graph({
+            "query": cleaned,
             "session_id": session_id,
         })
         return TaskResp(
@@ -79,9 +92,10 @@ def run_task(req: TaskReq):
             search_result=res.get("search_result", ""),
             code_result=res.get("code_result", ""),
             final_answer=res.get("final_answer", ""),
+            guardrails_blocked=res.get("_guardrails_blocked", False),
+            guardrails_violations=res.get("_guardrails_violations", []),
         )
     except Exception as e:
-        # 兜底异常处理，返回 500
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -45,6 +45,10 @@ class SearchAgent(BaseAgent):
             user_input: 搜索查询（通常来自 plan 的子任务）
         Returns: 结构化的搜索结果文本
         """
-        input = {"messages": [{"role": "user", "content": user_input}]}
+        messages = []
+        if self.memory_context:
+            messages.append({"role": "system", "content": f"历史对话：\n{self.memory_context}"})
+        messages.append({"role": "user", "content": user_input})
+        input = {"messages": messages}
         result = self.agent.invoke(input)
         return result["messages"][-1].content

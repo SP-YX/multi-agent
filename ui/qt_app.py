@@ -1,5 +1,5 @@
 """
-PyQt5 桌面客户端 — 多智能体系统的图形界面。
+PyQt5 桌面客户端 — 多智能体系统
 
 功能：
   - 聊天式对话界面
@@ -28,7 +28,7 @@ from PyQt5.QtGui import QFont, QTextCursor, QIcon
 from dotenv import load_dotenv
 load_dotenv()
 
-from graph.agent_graph import agent_graph
+from guardrails import Guardrails
 from agent_tools.middleware import get_perf_stats, get_token_usage
 
 
@@ -37,7 +37,7 @@ from agent_tools.middleware import get_perf_stats, get_token_usage
 # ═══════════════════════════════════════════════
 
 class AgentWorker(QThread):
-    """异步执行 Agent 任务的工作线程."""
+    """异步执行 Agent 任务的工作线程（集成 Guardrails 规则校验）。"""
     finished = pyqtSignal(dict)     # 执行完成，发射结果字典
     error = pyqtSignal(str)         # 执行出错，发射错误消息
 
@@ -45,11 +45,21 @@ class AgentWorker(QThread):
         super().__init__()
         self.query = query
         self.session_id = session_id
+        self.guard = Guardrails()
 
     def run(self):
         try:
-            result = agent_graph.invoke({
-                "query": self.query,
+            ok, cleaned, violations = self.guard.pre_process(self.query, self.session_id)
+            if not ok:
+                self.finished.emit({
+                    "final_answer": f"[Guardrails Blocked] {violations[0].get('message', '输入被拦截')}",
+                    "_guardrails_blocked": True,
+                    "_guardrails_violations": violations,
+                })
+                return
+
+            result = self.guard.wrap_graph({
+                "query": cleaned,
                 "session_id": self.session_id,
             })
             self.finished.emit(result)
@@ -133,7 +143,7 @@ class MessageBubble(QFrame):
         layout.setSpacing(4)
 
         # 角色标签
-        role_label = QLabel("🧑  You" if self.role == "user" else "🤖  Assistant")
+        role_label = QLabel("You" if self.role == "user" else "  Assistant")
         role_label.setStyleSheet("font-weight: bold; color: #555; font-size: 13px;")
         layout.addWidget(role_label)
 
@@ -159,9 +169,9 @@ class MessageBubble(QFrame):
         if self.role == "assistant" and self.intermediate:
             for key, value in self.intermediate.items():
                 label_map = {
-                    "sub_tasks": "📋 任务规划",
-                    "rag_result": "📚 RAG 检索",
-                    "search_result": "🌐 联网搜索",
+                    "sub_tasks": "任务规划",
+                    "rag_result": "RAG 检索",
+                    "search_result": "联网搜索",
                     "code_result": "💻 代码执行",
                 }
                 panel = CollapsiblePanel(label_map.get(key, key))
@@ -221,7 +231,7 @@ class MainWindow(QMainWindow):
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(16, 8, 16, 8)
 
-        title_label = QLabel("🤖 多智能体协作系统")
+        title_label = QLabel("多智能体协作系统")
         title_label.setStyleSheet("color: white; font-size: 18px; font-weight: bold;")
         header_layout.addWidget(title_label)
 
@@ -231,7 +241,7 @@ class MainWindow(QMainWindow):
 
         header_layout.addStretch()
 
-        new_btn = QPushButton("🔄 新建会话")
+        new_btn = QPushButton("新建会话")
         new_btn.setStyleSheet("""
             QPushButton { background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.4);
                           border-radius: 4px; padding: 6px 16px; font-size: 12px; }
@@ -362,6 +372,13 @@ class MainWindow(QMainWindow):
     def on_task_done(self, result: dict):
         """任务执行完成回调。"""
         final_answer = result.get("final_answer", "无输出")
+
+        if result.get("_guardrails_blocked"):
+            self.add_message("assistant", final_answer)
+            self._reset_input()
+            self.status_bar.showMessage("Guardrails 拦截", 3000)
+            return
+
         intermediate = {
             "sub_tasks": result.get("sub_tasks", ""),
             "rag_result": result.get("rag_result", ""),
@@ -403,7 +420,7 @@ class MainWindow(QMainWindow):
         """显示性能统计对话框。"""
         perf = get_perf_stats()
         token = get_token_usage()
-        lines = ["📊 性能统计\n"]
+        lines = ["性能统计\n"]
         if perf:
             for name, stats in perf.items():
                 lines.append(f"  {name}:")
@@ -413,15 +430,12 @@ class MainWindow(QMainWindow):
                 lines.append("")
         else:
             lines.append("  暂无数据\n")
-        lines.append(f"📝 Token 消耗预估: {token.get('total', 0)}")
+        lines.append(f"Token 消耗预估: {token.get('total', 0)}")
         QMessageBox.information(self, "性能统计", "\n".join(lines))
 
 
-# ═══════════════════════════════════════════════
 # 程序入口
-# ═══════════════════════════════════════════════
-
-def main():
+if __name__ == "__main__":
     app = QApplication(sys.argv)
     app.setFont(QFont("Microsoft YaHei", 10))
 
@@ -429,7 +443,3 @@ def main():
     window.show()
 
     sys.exit(app.exec_())
-
-
-if __name__ == "__main__":
-    main()

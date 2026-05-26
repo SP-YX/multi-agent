@@ -45,6 +45,10 @@ class CoderAgent(BaseAgent):
             user_input: 编程任务描述
         Returns: 代码执行结果文本
         """
-        input = {"messages": [{"role": "user", "content": user_input}]}
+        messages = []
+        if self.memory_context:
+            messages.append({"role": "system", "content": f"历史对话：\n{self.memory_context}"})
+        messages.append({"role": "user", "content": user_input})
+        input = {"messages": messages}
         result = self.agent.invoke(input)
         return result["messages"][-1].content

@@ -1,6 +1,6 @@
 # 大模型配置
 llm:
-  api_base: "https://api.openai.com/v1"
+  api_base: "https://api.deepseek.com"
   temperature: 0.1
 
 # RAG 配置

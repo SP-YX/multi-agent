@@ -1,0 +1,63 @@
+# Guardrails 规则约束配置
+# 定义整体规则来约束 Agent 行为，包括输入校验、输出校验。
+
+guardrails:
+  enabled: true
+
+  # ── 输入规则 ──
+  input_rules:
+    max_length:
+      enabled: true
+      max_chars: 4000
+      action: truncate
+      message: "输入超出长度限制，已截断"
+
+    blocked_topics:
+      enabled: true
+      keywords:
+        - "忽略之前的指令"
+        - "忘记你的提示"
+        - "ignore all instructions"
+        - "你被越狱了"
+        - "jailbreak"
+        - "忘记你的身份"
+        - "system override"
+        - "forget your prompt"
+      action: block
+      message: "输入包含被禁止的敏感内容，已拦截"
+
+    prompt_injection:
+      enabled: true
+      patterns:
+        - "system prompt"
+        - "你是一个"
+        - "你的角色是"
+        - "your system prompt"
+        - "你是由"
+      action: warn
+      message: "检测到可能的提示注入"
+
+  # ── 输出规则 ──
+  output_rules:
+    block_system_leakage:
+      enabled: true
+      keywords:
+        - "你是一个AI"
+        - "you are an ai"
+        - "your system prompt"
+        - "your role is"
+        - "you were created by"
+      action: block
+      message: "输出包含系统提示泄露，已拦截"
+
+    max_length:
+      enabled: true
+      max_chars: 50000
+      action: truncate
+      message: "输出超出长度限制，已截断"
+
+  # ── 日志 ──
+  logging:
+    enabled: true
+    log_level: "WARNING"
+    log_violations: true

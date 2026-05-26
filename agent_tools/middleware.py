@@ -171,13 +171,14 @@ def log_before_model(state: AgentState, runtime: Runtime):
 @before_model
 def memory_inject_middleware(state: AgentState, runtime: Runtime):
     """
-    记忆注入中间件：将全局 _MEMORY_CONTEXT 注入到 Agent 状态中，
-    使 LLM 能感知到历史对话内容。上下文由 graph/agent_graph.py 在
-    节点执行前通过 set_memory_context() 设置。
+    记忆注入中间件：将全局 _MEMORY_CONTEXT 作为 SystemMessage 插入到
+    state["messages"] 中，使 LLM 能感知到历史对话内容。
+    上下文由 graph/agent_graph.py / ui/app.py 在 Agent 执行前通过
+    set_memory_context() 设置。
     """
     if _MEMORY_CONTEXT:
-        # setdefault 仅在 key 不存在时设置，不覆盖已有内容
-        state.setdefault("memory_context", _MEMORY_CONTEXT)
+        from langchain_core.messages import SystemMessage
+        state["messages"].insert(0, SystemMessage(content=_MEMORY_CONTEXT))
         logger.debug(f"[memory_inject] 注入记忆上下文 ({len(_MEMORY_CONTEXT)} chars)")
     return None
 

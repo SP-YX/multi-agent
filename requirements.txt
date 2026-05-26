@@ -5,6 +5,8 @@ langchain-community>=0.3.0
 langchain-chroma>=0.2.0
 
 # LLM & Embeddings
+langchain-openai>=0.3.0
+openai>=1.0.0
 dashscope>=1.20.0
 python-dotenv>=1.0.0
 

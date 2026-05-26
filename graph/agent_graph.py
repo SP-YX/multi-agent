@@ -2,47 +2,38 @@
 LangGraph 状态图编排 — 多智能体协作系统的核心调度引擎。
 
 流程拓扑：
-  router → 根据问题类型分流：
-    simple  → 直接回复（一次 LLM 调用）
-    code    → coder → summary
-    rag     → retrieval → summary
-    search  → retrieval → summary
-    complex → planner → retrieval → coder → summary
+    router → 根据问题类型分流：
+        simple  → 直接回复（一次 LLM 调用）
+        code    → coder → summary
+        rag     → retrieval → summary
+        search  → retrieval → summary
+        complex → planner → retrieval → coder → summary
 
 RAG 和 Search 互相独立，通过 ThreadPoolExecutor 并行执行以节省时间。
 
 关键设计：
   - router 前置分类，简单问题不走全流水线
-  - _safe_run() 统一异常兜底，保证单节点失败不阻塞流水线
-  - _inject_memory() / _save_memory() 管理会话记忆的注入与持久化
+  - run_agent() 统一异常兜底，保证单节点失败不阻塞流水线
+  - _save_memory() 管理会话记忆的持久化
 """
 
-import time
 import logging
 import concurrent.futures
-from typing import TypedDict, Annotated, Optional
+from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
-from agents import PlanAgent, RAGAgent, SearchAgent, CoderAgent, SummaryAgent
+from agents import RouterAgent, PlanAgent, RAGAgent, SearchAgent, CoderAgent, SummaryAgent
+from agents.base_agent import BaseAgent
 from memory.conversation_memory import ConversationMemory
 from models.my_model import chat_model
-from agent_tools.middleware import (
-    set_memory_context,
-    clear_memory_context,
-    get_perf_stats,
-    get_token_usage,
-)
+from agent_tools.middleware import clear_memory_context
 
 logger = logging.getLogger(__name__)
 
-
-# ═══════════════════════════════════════════════
 # 状态定义
-# ═══════════════════════════════════════════════
-
 class AgentState(TypedDict):
     """
-    LangGraph 的共享状态结构。
-    每个 key 对应一个节点的输出，在流水线中逐步填充。
+    LangGraph 共享状态。
+    每个 key 对应一个节点的输出,在pipeline中逐步填充
     """
     query: str              # 用户原始输入
     route: str              # 路由器分类结果
@@ -55,42 +46,30 @@ class AgentState(TypedDict):
     session_id: str         # 会话标识，用于记忆隔离
 
 
-# ═══════════════════════════════════════════════
-# Agent 单例初始化（全局共享，避免重复创建）
-# ═══════════════════════════════════════════════
-
-plan_agent = PlanAgent()
-rag_agent = RAGAgent()
-search_agent = SearchAgent()
-coder_agent = CoderAgent()
-summary_agent = SummaryAgent()
+# Agent单例初始化
+router_agent = RouterAgent()   # 路由Agent
+plan_agent = PlanAgent()       # 计划Agent
+rag_agent = RAGAgent()         # 检索召回Agent
+search_agent = SearchAgent()   # 搜索Agent
+coder_agent = CoderAgent()     # 编程Agent
+summary_agent = SummaryAgent() # 总结Agent
 
 
-# ═══════════════════════════════════════════════
 # 记忆管理辅助函数
-# ═══════════════════════════════════════════════
+_memory_cache: dict[str, ConversationMemory] = {}
 
 def _get_memory(state: AgentState) -> ConversationMemory:
     """
     根据 state 中的 session_id 获取对应会话记忆实例。
+    同一个 session 内的多个图节点复用同一实例，避免反复读写 JSON。
     Args:
         state: 当前 Agent 状态
     Returns: ConversationMemory 实例
     """
     session_id = state.get("session_id", "default")
-    return ConversationMemory(session_id=session_id)
-
-
-def _inject_memory(memory: ConversationMemory):
-    """
-    将记忆上下文注入全局中间件变量。
-    由 memory_inject_middleware 在 pre-model 阶段读取并添加到 AgentState。
-    Args:
-        memory: 当前会话的记忆实例
-    """
-    context = memory.get_context()
-    if context:
-        set_memory_context(context)
+    if session_id not in _memory_cache:
+        _memory_cache[session_id] = ConversationMemory(session_id=session_id)
+    return _memory_cache[session_id]
 
 
 def _save_memory(memory: ConversationMemory, query: str, answer: str):
@@ -105,27 +84,27 @@ def _save_memory(memory: ConversationMemory, query: str, answer: str):
     memory.add_conversation(user=query, assistant=answer)
 
 
-def _safe_run(agent, state: AgentState, input_text: str, memory: ConversationMemory, **kwargs) -> str:
+def run_agent(agent: BaseAgent, state: AgentState, input_text: str, memory: ConversationMemory, **kwargs) -> str:
     """
-    统一的安全执行包装器。
-    1. 注入记忆上下文
-    2. 执行 Agent
-    3. 捕获异常返回错误消息
-    4. 清理记忆上下文
+    执行Agent。
+    LLM 调用超时由模型层面的 request_timeout 参数处理，避免线程泄漏。
+    
     Args:
         agent: Agent 实例
-        state: 当前状态（未使用，保留一致性）
+        state: 当前状态（暂未使用，保留一致性）
         input_text: 输入文本
         memory: 会话记忆
         **kwargs: 透传给 agent.run() 的额外参数
     Returns: Agent 输出或错误消息
     """
-    _inject_memory(memory)
+    context = memory.get_context()
     try:
+        if context:
+            agent.set_memory_context(context)
         result = agent.run(input_text, **kwargs)
-        return result if result else "[No output]"
+        return result if result else "[Null]"
     except Exception as e:
-        logger.error(f"Agent error: {e}", exc_info=True)
+        logger.error(f"[run_agent] Agent执行失败! 错误:{e}", exc_info=True)
         return f"[System Error] {type(e).__name__}: {e}"
     finally:
         clear_memory_context()
@@ -140,25 +119,18 @@ def router_node(state: AgentState) -> dict:
     【节点 0】路由器：将用户问题分类，决定走哪条流水线。
     用一次轻量 LLM 调用完成分类，避免所有问题都走全量流程。
     """
-    query = state["query"]
-    prompt = (
-        f"将以下问题分类到其中一个类别（只返回类别名称）：\n"
-        f"- simple：问候、闲聊、简单问答（一句话能回答的简单问题）\n"
-        f"- code：编程、算法、代码编写与调试\n"
-        f"- rag：需要查找本地知识库或内部文档资料\n"
-        f"- search：实时信息、新闻、最新动态或网络内容\n"
-        f"- complex：复杂任务，需要先规划再执行的多步骤工作\n\n"
-        f"问题：{query}\n"
-        f"类别："
-    )
-    resp = chat_model.invoke(prompt)
-    route = resp.content.strip().lower()
+    import time as _time
+    _t0 = _time.perf_counter()
+    logger.info(f"[router_node] start | query={state['query'][:50]}")
+    memory = _get_memory(state)
+    _t1 = _time.perf_counter()
+    result = run_agent(router_agent, state, state["query"], memory)
+    _t2 = _time.perf_counter()
     valid = {"simple", "code", "rag", "search", "complex"}
-    if route not in valid:
-        route = "complex"
-    logger.info(f"[router] {query[:50]} -> {route}")
-    return {"route": route}
-
+    if result not in valid:
+        result = "complex"
+    logger.info(f"[router_node] done | get_memory={_t1-_t0:.2f}s run_agent={_t2-_t1:.2f}s route={result}")
+    return {"route": result}
 
 def route_decision(state: AgentState) -> str:
     """路由器条件边：根据 route 字段跳转到对应节点。"""
@@ -175,6 +147,8 @@ def after_retrieval(state: AgentState) -> str:
 # 状态图节点函数
 # ═══════════════════════════════════════════════
 
+SIMPLE_SYSTEM_PROMPT = "你是一个友好的 AI 助手，请用简洁直接的方式回答用户的问题。回答控制在 5 句话以内。"
+
 def simple_reply_node(state: AgentState) -> dict:
     """
     【节点 1】简单回复节点。
@@ -182,7 +156,13 @@ def simple_reply_node(state: AgentState) -> dict:
     """
     logger.info("[simple_reply_node] 直接回复")
     memory = _get_memory(state)
-    resp = chat_model.invoke(state["query"])
+    context = memory.get_context()
+    query = state["query"]
+    messages = [("system", SIMPLE_SYSTEM_PROMPT)]
+    if context:
+        messages.append(("human", f"历史对话：{context}"))
+    messages.append(("human", query))
+    resp = chat_model.invoke(messages)
     answer = resp.content
     _save_memory(memory, state["query"], answer)
     return {"final_answer": answer}
@@ -195,7 +175,7 @@ def planner_node(state: AgentState) -> dict:
     """
     logger.info(f"[planner_node] start | query={state['query'][:50]}")
     memory = _get_memory(state)
-    result = _safe_run(plan_agent, state, state["query"], memory)
+    result = run_agent(plan_agent, state, state["query"], memory)
     return {"sub_tasks": result}
 
 
@@ -209,11 +189,11 @@ def retrieval_node(state: AgentState) -> dict:
 
     def run_rag():
         mem = _get_memory(state)
-        return _safe_run(rag_agent, state, query, mem)
+        return run_agent(rag_agent, state, query, mem)
 
     def run_search():
         mem = _get_memory(state)
-        return _safe_run(search_agent, state, query, mem)
+        return run_agent(search_agent, state, query, mem)
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
         fut_rag = pool.submit(run_rag)
@@ -234,7 +214,7 @@ def code_node(state: AgentState) -> dict:
     logger.info("[code_node] start")
     memory = _get_memory(state)
     query = state["query"]
-    result = _safe_run(coder_agent, state, query, memory)
+    result = run_agent(coder_agent, state, query, memory)
     return {"code_result": result}
 
 
@@ -246,7 +226,7 @@ def summary_node(state: AgentState) -> dict:
     """
     logger.info("[summary_node] start")
     memory = _get_memory(state)
-    result = _safe_run(
+    result = run_agent(
         summary_agent, state, state["query"],
         memory,
         sub_tasks=state.get("sub_tasks", ""),

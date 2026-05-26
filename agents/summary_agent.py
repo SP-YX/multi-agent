@@ -13,7 +13,6 @@ from agent_tools.middleware import (
     monitor_tool,
     log_before_model,
     performance_middleware,
-    memory_inject_middleware,
     token_counter_middleware,
 )
 from utils.prompts_tool import get_summary_prompts
@@ -34,7 +33,6 @@ class SummaryAgent(BaseAgent):
                 monitor_tool,
                 log_before_model,
                 performance_middleware,
-                memory_inject_middleware,
                 token_counter_middleware,
             ],
         )
@@ -71,6 +69,10 @@ class SummaryAgent(BaseAgent):
 
 Please synthesize all the above information into a comprehensive final answer.
 """
-        input = {"messages": [{"role": "user", "content": combined_input}]}
+        messages = []
+        if self.memory_context:
+            messages.append({"role": "system", "content": f"历史对话：\n{self.memory_context}"})
+        messages.append({"role": "user", "content": combined_input})
+        input = {"messages": messages}
         result = self.agent.invoke(input)
         return result["messages"][-1].content

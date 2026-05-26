@@ -1,4 +1,5 @@
 # main_prompt
+router_prompt_path: prompts/router_prompt.txt 
 plan_prompt_path: prompts/plan_prompt.txt
 rag_prompt_path: prompts/rag_prompt.txt
 search_prompt_path: prompts/search_prompt.txt

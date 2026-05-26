@@ -31,6 +31,3 @@ agent_config = get_agent_config() # 智能体配置
 prompts_config = get_prompts_config() # 提示词配置
 vector_db_config = get_vector_db_config() # 向量库配置
 search_tool_config = get_search_tool_config() # 搜索工具配置
-
-if __name__ == "__main__":
-    print("sss")

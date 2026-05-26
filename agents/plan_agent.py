@@ -13,7 +13,6 @@ from agent_tools.middleware import (
     monitor_tool,
     log_before_model,
     performance_middleware,
-    memory_inject_middleware,
     token_counter_middleware,
 )
 from utils.prompts_tool import get_plan_prompts
@@ -34,7 +33,6 @@ class PlanAgent(BaseAgent):
                 monitor_tool,
                 log_before_model,
                 performance_middleware,
-                memory_inject_middleware,
                 token_counter_middleware,
             ],
         )
@@ -46,6 +44,10 @@ class PlanAgent(BaseAgent):
             user_input: 用户原始需求
         Returns: 结构化的任务计划文本
         """
-        input = {"messages": [{"role": "user", "content": user_input}]}
+        messages = []
+        if self.memory_context:
+            messages.append({"role": "system", "content": f"历史对话：\n{self.memory_context}"})
+        messages.append({"role": "user", "content": user_input})
+        input = {"messages": messages}
         result = self.agent.invoke(input)
         return result["messages"][-1].content
