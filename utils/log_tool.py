@@ -5,7 +5,7 @@ from datetime import datetime
 
 # 日志根目录
 log_root = get_abs_path('logs')
-os.makedirs(log_root, exist_ok=True)
+os.makedirs(log_root, exist_ok = True)
 
 # 日志默认格式
 default_log_format = logging.Formatter(

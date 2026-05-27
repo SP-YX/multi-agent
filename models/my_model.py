@@ -4,8 +4,9 @@ from langchain_openai import ChatOpenAI
 from langchain_core.language_models import BaseChatModel
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_core.embeddings import Embeddings
-from utils.config_tool import model_config, agent_config
-
+import os
+from dotenv import load_dotenv
+load_dotenv(override=True)
 
 class BaseModel(ABC):
     @abstractmethod
@@ -15,19 +16,20 @@ class BaseModel(ABC):
 
 class ChatModel(BaseModel):
     def create_model(self) -> Optional[BaseChatModel | Embeddings]:
-        llm_cfg = agent_config.get("llm", {})
         return ChatOpenAI(
-            model=model_config["chat_model_name"],
-            temperature=llm_cfg.get("temperature", 0.1),
-            request_timeout=15,
-            max_retries=0,
-            base_url=llm_cfg.get("api_base"),
+            model = os.getenv("MODEL_NAME"),
+            temperature = os.getenv("TEMPERATURE"),
+            request_timeout = 15,
+            max_retries = 0,
+            api_key = os.getenv("OPENAI_API_KEY"),
+            base_url = os.getenv("OPENAI_API_BASE")
         )
 
 
 class EmbeddingsModel(BaseModel):
     def create_model(self) -> Optional[BaseChatModel | Embeddings]:
-        return DashScopeEmbeddings(model=model_config["embedding_model_name"])
+        return DashScopeEmbeddings(model = os.getenv("EMBEDDING_MODEL_NAME"),
+            dashscope_api_key= os.getenv("DASHSCOPE_API_KEY"))
 
 
 chat_model = ChatModel().create_model()
