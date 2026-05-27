@@ -9,7 +9,7 @@ SearchAgent — 联网搜索智能体
 """
 
 from langchain.agents import create_agent
-from agent_tools.web_search import web_search_tool
+from agent_tools.web_search_tool import web_search_tool
 from agent_tools.middleware import (
     monitor_tool,
     log_before_model,

@@ -147,8 +147,6 @@ def after_retrieval(state: AgentState) -> str:
 # 状态图节点函数
 # ═══════════════════════════════════════════════
 
-SIMPLE_SYSTEM_PROMPT = "你是一个友好的 AI 助手，请用简洁直接的方式回答用户的问题。回答控制在 5 句话以内。"
-
 def simple_reply_node(state: AgentState) -> dict:
     """
     【节点 1】简单回复节点。
@@ -158,7 +156,7 @@ def simple_reply_node(state: AgentState) -> dict:
     memory = _get_memory(state)
     context = memory.get_context()
     query = state["query"]
-    messages = [("system", SIMPLE_SYSTEM_PROMPT)]
+    messages = [("system", "你是一个友好的 AI 助手，请用简洁直接的方式回答用户的问题。回答控制在 5 句话以内。")]
     if context:
         messages.append(("human", f"历史对话：{context}"))
     messages.append(("human", query))

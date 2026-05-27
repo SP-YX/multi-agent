@@ -16,13 +16,15 @@ class BaseModel(ABC):
 
 class ChatModel(BaseModel):
     def create_model(self) -> Optional[BaseChatModel | Embeddings]:
+        temp = os.getenv("TEMPERATURE", "0.1")
         return ChatOpenAI(
             model = os.getenv("MODEL_NAME"),
-            temperature = os.getenv("TEMPERATURE"),
-            request_timeout = 15,
+            temperature = float(temp),
+            request_timeout = 120,
             max_retries = 0,
             api_key = os.getenv("OPENAI_API_KEY"),
-            base_url = os.getenv("OPENAI_API_BASE")
+            base_url = os.getenv("OPENAI_API_BASE"),
+            extra_body = {"thinking": {"type": "disabled"}},
         )
 
 
