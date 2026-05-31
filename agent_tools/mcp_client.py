@@ -6,7 +6,7 @@ MCP (Model Context Protocol) 工具模块 — 连接 MCP Server，动态发现�
   2. SSE  — 通过 HTTP 连接远程 MCP Server
 
 用法示例:
-  from agent_tools.mcp_tool import mcp_call_tool, mcp_list_tools, create_mcp_client
+  from agent_tools.mcp_client import mcp_call_tool, mcp_list_tools, create_mcp_client
 
   async with create_mcp_client("stdio", command="npx", args=["-y", "@modelcontextprotocol/server-filesystem", "."]) as client:
       tools = await mcp_list_tools(client)

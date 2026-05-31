@@ -6,7 +6,7 @@ MCP 同步工具封装 — 每步调用独立创建会话，避免事件循环�
 import asyncio
 from langchain_core.tools import tool
 
-from agent_tools.mcp_tool import create_mcp_client, mcp_call_tool
+from agent_tools.mcp_client import create_mcp_client, mcp_call_tool
 
 
 def _run_async(coro):
@@ -57,8 +57,8 @@ def mcp_write_file(path: str, content: str) -> str:
 @tool(description="[MCP Git] 查看 Git 仓库状态")
 def mcp_git_status() -> str:
     async def _():
-        async with create_mcp_client("stdio", command="npx",
-                                     args=["-y", "@modelcontextprotocol/server-git", "."]) as c:
+        async with create_mcp_client("stdio", command="python",
+                                     args=["-m", "mcp_server_git", "--repository", "."]) as c:
             return await mcp_call_tool(c, "git_status", {})
     return _run_async(_())
 
@@ -66,8 +66,8 @@ def mcp_git_status() -> str:
 @tool(description="[MCP Git] 查看 Git 提交日志。参数：max_commits=最大提交数（默认10）")
 def mcp_git_log(max_commits: int = 10) -> str:
     async def _():
-        async with create_mcp_client("stdio", command="npx",
-                                     args=["-y", "@modelcontextprotocol/server-git", "."]) as c:
+        async with create_mcp_client("stdio", command="python",
+                                     args=["-m", "mcp_server_git", "--repository", "."]) as c:
             return await mcp_call_tool(c, "git_log", {"max_commits": max_commits})
     return _run_async(_())
 
@@ -75,8 +75,8 @@ def mcp_git_log(max_commits: int = 10) -> str:
 @tool(description="[MCP Git] 查看文件差异。参数：path=文件路径（可选）")
 def mcp_git_diff(path: str = "") -> str:
     async def _():
-        async with create_mcp_client("stdio", command="npx",
-                                     args=["-y", "@modelcontextprotocol/server-git", "."]) as c:
+        async with create_mcp_client("stdio", command="python",
+                                     args=["-m", "mcp_server_git", "--repository", "."]) as c:
             return await mcp_call_tool(c, "git_diff", {"path": path})
     return _run_async(_())
 

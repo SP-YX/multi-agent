@@ -189,7 +189,7 @@ multi-agent/
 │   ├── rag_tool.py               # RAG 检索工具
 │   ├── web_search_tool.py        # 联网搜索（Tavily + DuckDuckGo）
 │   ├── code_interpreter.py       # 安全 Python 沙箱
-│   ├── mcp_tool.py               # MCP 异步客户端（stdio/SSE）
+│   ├── mcp_client.py             # MCP 异步客户端（stdio/SSE）
 │   ├── mcp_tools.py              # MCP 同步工具封装（@tool，可直接注入 Agent）
 │   └── middleware.py             # 6 个中间件
 │

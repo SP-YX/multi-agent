@@ -10,7 +10,7 @@ CoderAgent — 代码生成与执行智能体
 
 from langchain.agents import create_agent
 from agent_tools.code_interpreter import code_exec_tool
-from agent_tools.mcp_tools import mcp_read_file, mcp_search_files, mcp_git_status
+from agent_tools.mcp_tools import mcp_read_file, mcp_list_directory, mcp_search_files, mcp_write_file, mcp_git_status, mcp_fetch_url
 from agent_tools.middleware import (
     monitor_tool,
     log_before_model,
@@ -30,7 +30,7 @@ class CoderAgent(BaseAgent):
         self.agent = create_agent(
             model=self.model,
             system_prompt=get_coder_prompts(),
-            tools=[code_exec_tool, mcp_read_file, mcp_search_files, mcp_git_status],
+            tools=[code_exec_tool, mcp_read_file, mcp_list_directory, mcp_search_files, mcp_write_file, mcp_git_status, mcp_fetch_url],
             middleware=[
                 monitor_tool,
                 log_before_model,

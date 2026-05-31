@@ -16,7 +16,7 @@ from agent_tools.middleware import (
     error_handler_middleware,
 )
 from agent_tools.rag_tool import rag_summarize
-from utils.prompts_tool import get_rag_prompts
+from utils.prompts_tool import get_rag_agent_prompt
 from .base_agent import BaseAgent
 
 
@@ -28,7 +28,7 @@ class RAGAgent(BaseAgent):
         super().__init__()
         self.agent = create_agent(
             model=self.model,
-            system_prompt=get_rag_prompts(),
+            system_prompt=get_rag_agent_prompt(),
             tools=[rag_summarize],
             middleware=[
                 monitor_tool,

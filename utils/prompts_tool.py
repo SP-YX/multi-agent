@@ -40,13 +40,7 @@ def get_plan_prompts() -> str:
         logger.error(f"解析plan_prompts失败,{str(e)}")
         raise e
     
-def get_rag_prompts() -> str:
-    """
-    获取rag提示词
-
-    Returns:
-        _type_: 返回提示词文本
-    """
+def get_rag_prompt() -> str:
     try:
         path = get_abs_path(prompts_config['rag_prompt_path'])
     except KeyError as e:
@@ -56,7 +50,20 @@ def get_rag_prompts() -> str:
     try:
         return open(path,'r',encoding="utf-8").read()
     except Exception as e:
-        logger.error(f"解析rag_prompts失败,{str(e)}")
+        logger.error(f"解析rag_prompt失败,{str(e)}")
+        raise e
+
+def get_rag_agent_prompt() -> str:
+    try:
+        path = get_abs_path(prompts_config['rag_agent_prompt_path'])
+    except KeyError as e:
+        logger.error(f"prompts.yml缺少key:rag_agent_prompt_path")
+        raise e
+    
+    try:
+        return open(path,'r',encoding="utf-8").read()
+    except Exception as e:
+        logger.error(f"解析rag_agent_prompt失败,{str(e)}")
         raise e
 
 def get_search_prompts() -> str:

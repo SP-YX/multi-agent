@@ -27,7 +27,7 @@ Agent 工具模块 — 所有可被 Agent 调用的工具和中间件。
 from .web_search_tool import web_search_tool
 from .code_interpreter import code_exec_tool
 from .rag_tool import rag_summarize
-from .mcp_tool import create_mcp_client, mcp_list_tools, mcp_call_tool, mcp_list_resources, mcp_read_resource
+from .mcp_client import create_mcp_client, mcp_list_tools, mcp_call_tool, mcp_list_resources, mcp_read_resource
 from .mcp_tools import (
     mcp_read_file, mcp_list_directory, mcp_search_files, mcp_write_file,
     mcp_git_status, mcp_git_log, mcp_git_diff, mcp_fetch_url,

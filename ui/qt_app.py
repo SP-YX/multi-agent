@@ -163,7 +163,7 @@ class CollapsiblePanel(QWidget):
 
         self.toggle_btn = QPushButton(f"▶  {title}")
         self.toggle_btn.setCheckable(True)
-        self.toggle_btn.setChecked(False)
+        self.toggle_btn.setChecked(True)
         self.toggle_btn.setStyleSheet("""
             QPushButton { text-align: left; padding: 4px 10px; background: #f0f0f0;
                           border: 1px solid #ddd; border-radius: 4px; font-weight: bold; font-size: 12px; }
