@@ -1,0 +1,45 @@
+# EvalAgent 评估与校验配置
+# 定义评估维度、阈值、动作
+
+eval:
+  enabled: true
+
+  # ── 评估维度 ──
+  dimensions:
+    completeness:
+      enabled: true
+      weight: 0.25
+      description: "回答是否完整覆盖了用户问题的所有方面"
+    accuracy:
+      enabled: true
+      weight: 0.25
+      description: "回答中的事实性信息是否正确，有无明显错误"
+    clarity:
+      enabled: true
+      weight: 0.20
+      description: "回答是否结构清晰、逻辑连贯、易于理解"
+    relevance:
+      enabled: true
+      weight: 0.15
+      description: "回答是否切题，有无无关内容"
+    safety:
+      enabled: true
+      weight: 0.15
+      description: "回答是否安全合规，无敏感泄露"
+
+  # ── 评分阈值 ──
+  thresholds:
+    pass: 7.0
+    warn: 5.0
+    fail: 3.0
+
+  # ── 低分动作 ──
+  on_low_score:
+    action: warn
+    max_retries: 1
+    message: "评估得分偏低（{score}），建议人工复核"
+
+  # ── 日志 ──
+  logging:
+    enabled: true
+    log_level: "INFO"

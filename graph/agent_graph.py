@@ -4,6 +4,7 @@ LangGraph 状态图编排 — 多智能体协作系统的核心调度引擎。
 流程拓扑：
     router → 根据问题类型分流：
         simple  → 直接回复（一次 LLM 调用）
+        skill   → skill_node → summary
         code    → coder → summary
         rag     → retrieval → summary
         search  → retrieval → summary
@@ -12,20 +13,24 @@ LangGraph 状态图编排 — 多智能体协作系统的核心调度引擎。
 RAG 和 Search 互相独立，通过 ThreadPoolExecutor 并行执行以节省时间。
 
 关键设计：
+  - Skill System 作为一等公民：router 可识别技能类问题直达 skill_node
+  - skill_node 使用 SkillAgent 一站式匹配、执行、整合技能
   - router 前置分类，简单问题不走全流水线
   - run_agent() 统一异常兜底，保证单节点失败不阻塞流水线
   - _save_memory() 管理会话记忆的持久化
 """
 
+import json
 import logging
 import concurrent.futures
 from typing import TypedDict, Optional
 from langgraph.graph import StateGraph, END
-from agents import RouterAgent, PlanAgent, RAGAgent, SearchAgent, CoderAgent, SummaryAgent
+from agents import RouterAgent, PlanAgent, RAGAgent, SearchAgent, CoderAgent, SummaryAgent, EvalAgent
 from agents.base_agent import BaseAgent
 from memory.conversation_memory import ConversationMemory
 from models.my_model import chat_model
 from agent_tools.middleware import clear_memory_context
+from skills.skill_agent import SkillAgent
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +46,9 @@ class AgentState(TypedDict):
     rag_result: str         # RAGAgent → 知识库检索结果
     search_result: str      # SearchAgent → 联网搜索结果
     code_result: str        # CoderAgent → 代码执行结果
+    skill_result: str       # SkillNode → 技能执行结果
     final_answer: str       # SummaryAgent → 最终汇总回答
+    eval_report: Optional[str]  # EvalAgent → 评估报告（JSON）
     error: Optional[str]    # 节点执行时的异常信息（暂未使用，保留扩展）
     session_id: str         # 会话标识，用于记忆隔离
 
@@ -53,6 +60,8 @@ rag_agent = RAGAgent()         # 检索召回Agent
 search_agent = SearchAgent()   # 搜索Agent
 coder_agent = CoderAgent()     # 编程Agent
 summary_agent = SummaryAgent() # 总结Agent
+eval_agent = EvalAgent()       # 评估校验Agent
+skill_agent = SkillAgent()     # 技能调度Agent
 
 
 # 记忆管理辅助函数
@@ -118,6 +127,7 @@ def router_node(state: AgentState) -> dict:
     """
     【节点 0】路由器：将用户问题分类，决定走哪条流水线。
     用一次轻量 LLM 调用完成分类，避免所有问题都走全量流程。
+    现在支持 6 种路由：simple / skill / code / rag / search / complex
     """
     import time as _time
     _t0 = _time.perf_counter()
@@ -126,7 +136,7 @@ def router_node(state: AgentState) -> dict:
     _t1 = _time.perf_counter()
     result = run_agent(router_agent, state, state["query"], memory)
     _t2 = _time.perf_counter()
-    valid = {"simple", "code", "rag", "search", "complex"}
+    valid = {"simple", "skill", "code", "rag", "search", "complex"}
     if result not in valid:
         result = "complex"
     logger.info(f"[router_node] done | get_memory={_t1-_t0:.2f}s run_agent={_t2-_t1:.2f}s route={result}")
@@ -164,6 +174,25 @@ def simple_reply_node(state: AgentState) -> dict:
     answer = resp.content
     _save_memory(memory, state["query"], answer)
     return {"final_answer": answer}
+
+
+def skill_node(state: AgentState) -> dict:
+    """
+    【节点 1】技能调度节点。
+    利用 SkillAgent 匹配用户需求与可用技能，执行并返回结果。
+    支持数学计算、文件分析、代码统计、联网调研等专业技能。
+    """
+    logger.info(f"[skill_node] start | query={state['query'][:50]}")
+    memory = _get_memory(state)
+    context = memory.get_context()
+    try:
+        if context:
+            skill_agent.set_memory_context(context)
+        result = skill_agent.run(state["query"])
+        return {"skill_result": result}
+    except Exception as e:
+        logger.error(f"[skill_node] 技能执行失败! 错误:{e}", exc_info=True)
+        return {"skill_result": f"[Skill Error] {type(e).__name__}: {e}"}
 
 
 def planner_node(state: AgentState) -> dict:
@@ -219,7 +248,7 @@ def code_node(state: AgentState) -> dict:
 def summary_node(state: AgentState) -> dict:
     """
     【节点 5】结果汇总节点。
-    汇聚 plan + RAG + search + code 的全部输出，
+    汇聚 plan + RAG + search + code + skill 的全部输出，
     生成统一、完整的最终回答。同时将会话保存到记忆系统。
     """
     logger.info("[summary_node] start")
@@ -231,10 +260,43 @@ def summary_node(state: AgentState) -> dict:
         rag_res=state.get("rag_result", ""),
         search_res=state.get("search_result", ""),
         code_res=state.get("code_result", ""),
+        skill_res=state.get("skill_result", ""),
     )
     # 汇总完成后保存对话到记忆
     _save_memory(memory, state["query"], result)
     return {"final_answer": result}
+
+
+def eval_node(state: AgentState) -> dict:
+    """
+    【节点 6】评估校验节点。
+    对 Summary Agent 的最终回答进行多维度质量评估。
+    不修改 final_answer，仅附加评估报告。
+    """
+    logger.info("[eval_node] start")
+    if not eval_agent.enabled:
+        logger.info("[eval_node] EvalAgent 未启用，跳过")
+        return {"eval_report": ""}
+
+    query = state.get("query", "")
+    final_answer = state.get("final_answer", "")
+    if not final_answer:
+        logger.warning("[eval_node] 无 final_answer，跳过评估")
+        return {"eval_report": ""}
+
+    try:
+        report = eval_agent.evaluate(query, final_answer)
+        report_json = json.dumps(report, ensure_ascii=False, indent=2)
+        weighted = report.get("weighted_total", 0.0)
+        passed = report.get("passed", False)
+        logger.info(f"[eval_node] 评估完成 | 加权总分={weighted} | 通过={passed}")
+
+        if not passed and eval_agent.needs_retry(report):
+            logger.warning(f"[eval_node] 评分 {weighted} 低于重试阈值，标记需人工复核")
+        return {"eval_report": report_json}
+    except Exception as e:
+        logger.error(f"[eval_node] 评估失败: {e}", exc_info=True)
+        return {"eval_report": f'{{"error": "{e}", "weighted_total": 0.0, "passed": false}}'}
 
 
 # ═══════════════════════════════════════════════
@@ -246,6 +308,7 @@ def build_agent_graph():
     构建 LangGraph 状态图。
     流程：router → 按类型分流
       simple  → 直接回复
+      skill   → skill_node → summary
       code    → coder → summary
       rag     → retrieval → summary
       search  → retrieval → summary
@@ -256,10 +319,12 @@ def build_agent_graph():
 
     workflow.add_node("router", router_node)
     workflow.add_node("simple_reply", simple_reply_node)
+    workflow.add_node("skill_node", skill_node)
     workflow.add_node("planner", planner_node)
     workflow.add_node("retrieval", retrieval_node)
     workflow.add_node("coder", code_node)
     workflow.add_node("summary", summary_node)
+    workflow.add_node("eval", eval_node)
 
     workflow.set_entry_point("router")
 
@@ -268,6 +333,7 @@ def build_agent_graph():
         route_decision,
         {
             "simple": "simple_reply",
+            "skill": "skill_node",
             "code": "coder",
             "rag": "retrieval",
             "search": "retrieval",
@@ -276,6 +342,7 @@ def build_agent_graph():
     )
 
     workflow.add_edge("simple_reply", END)
+    workflow.add_edge("skill_node", "summary")
     workflow.add_edge("planner", "retrieval")
 
     workflow.add_conditional_edges(
@@ -288,7 +355,8 @@ def build_agent_graph():
     )
 
     workflow.add_edge("coder", "summary")
-    workflow.add_edge("summary", END)
+    workflow.add_edge("summary", "eval")
+    workflow.add_edge("eval", END)
 
     return workflow.compile()
 

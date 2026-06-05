@@ -37,6 +37,7 @@ class TaskResp(BaseModel):
     rag_result: str
     search_result: str
     code_result: str
+    skill_result: str
     final_answer: str
     guardrails_blocked: bool = False
     guardrails_violations: list = []
@@ -74,7 +75,7 @@ def run_task(req: TaskReq):
     if not ok:
         return TaskResp(
             session_id=session_id,
-            sub_tasks="", rag_result="", search_result="", code_result="",
+            sub_tasks="", rag_result="", search_result="", code_result="", skill_result="",
             final_answer=f"[Guardrails Blocked] {in_violations[0].get('message', '输入被拦截')}",
             guardrails_blocked=True,
             guardrails_violations=in_violations,
@@ -91,6 +92,7 @@ def run_task(req: TaskReq):
             rag_result=res.get("rag_result", ""),
             search_result=res.get("search_result", ""),
             code_result=res.get("code_result", ""),
+            skill_result=res.get("skill_result", ""),
             final_answer=res.get("final_answer", ""),
             guardrails_blocked=res.get("_guardrails_blocked", False),
             guardrails_violations=res.get("_guardrails_violations", []),

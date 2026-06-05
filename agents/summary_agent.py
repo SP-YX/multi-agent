@@ -1,7 +1,7 @@
 """
 SummaryAgent — 结果汇总智能体
 
-职责：汇聚全流程中间结果（规划 + RAG + 搜索 + 代码），
+职责：汇聚全流程中间结果（规划 + RAG + 搜索 + 代码 + 技能），
 合成结构化的最终回答。是整个流水线的最后一环。
 
 无工具依赖，纯 LLM 调用。
@@ -42,7 +42,7 @@ class SummaryAgent(BaseAgent):
         执行结果汇总。
         Args:
             user_input: 原始用户查询
-            **kwargs: 需要包含 sub_tasks / rag_res / search_res / code_res
+            **kwargs: 需要包含 sub_tasks / rag_res / search_res / code_res / skill_res
         Returns: 整合后的最终回答
         """
         # 从 kwargs 中提取各 Agent 的中间结果
@@ -50,6 +50,7 @@ class SummaryAgent(BaseAgent):
         search_res = kwargs.get("search_res", "")
         code_res = kwargs.get("code_res", "")
         plan_res = kwargs.get("sub_tasks", "")
+        skill_res = kwargs.get("skill_res", "")
 
         # 将所有中间结果拼接到一个输入中，交给 LLM 统一汇总
         combined_input = f"""## Original Query
@@ -63,6 +64,9 @@ class SummaryAgent(BaseAgent):
 
 ## Web Search Results
 {search_res}
+
+## Skill Execution Results
+{skill_res}
 
 ## Code Execution Results
 {code_res}

@@ -222,10 +222,49 @@ with st.sidebar:
     st.metric("预估 Token 消耗", token_usage.get("total", 0))
 
     st.divider()
+    st.subheader("⚡ 技能管理")
+
+    try:
+        from skills.skill_registry import SkillRegistry
+        _reg = SkillRegistry()
+        meta_list = _reg.list_metadata()
+        if meta_list:
+            for m in meta_list:
+                with st.container():
+                    st.markdown(f"**{m['name']}**  `{m['category']}`")
+                    st.caption(m["description"][:60])
+    except Exception:
+        pass
+
+    with st.popover("＋ 创建自定义技能", use_container_width=True):
+        with st.form("create_skill_form"):
+            s_name = st.text_input("技能名称", placeholder="my_translator")
+            s_desc = st.text_input("描述", placeholder="翻译为英文")
+            s_kw = st.text_input("触发关键词", placeholder="翻译, 英文, translate")
+            s_prompt = st.text_area(
+                "System Prompt",
+                placeholder="你是一个翻译专家，将用户输入翻译为英文",
+                height=100,
+            )
+            if st.form_submit_button("创建", type="primary", use_container_width=True):
+                if s_name and s_desc and s_prompt:
+                    from skills.dynamic_skill import create_dynamic_skill_from_form
+                    kw_list = [k.strip() for k in s_kw.split(",") if k.strip()]
+                    skill = create_dynamic_skill_from_form(s_name, s_desc, kw_list, s_prompt)
+                    ok = _reg.add_user_skill(skill)
+                    if ok:
+                        st.success(f"技能 '{s_name}' 创建成功！")
+                        st.rerun()
+                    else:
+                        st.error("创建失败")
+                else:
+                    st.warning("名称、描述、提示词为必填项")
+
+    st.divider()
     st.subheader("💡 使用提示")
     st.markdown("""
     - 输入任务描述，系统自动调度
-    - 五个 Agent 按流水线执行
+    - Agent 按流水线执行
     - 左侧可切换历史会话
     """)
 
@@ -316,7 +355,7 @@ if prompt := st.chat_input("输入你的任务..."):
             st.markdown(final_cleaned)
             st.caption(f"⏱️ 耗时 {_elapsed:.1f}s")
 
-            has_intermediate = any(k in intermediate for k in ("sub_tasks", "rag_result", "search_result", "code_result"))
+            has_intermediate = any(k in intermediate for k in ("sub_tasks", "rag_result", "search_result", "code_result", "skill_result"))
             if has_intermediate:
                 with st.expander("查看中间结果"):
                     cols = st.columns(2)
@@ -325,6 +364,8 @@ if prompt := st.chat_input("输入你的任务..."):
                             st.text_area("任务规划", intermediate["sub_tasks"], height=150)
                         if intermediate.get("search_result"):
                             st.text_area("搜索结果", intermediate["search_result"], height=150)
+                        if intermediate.get("skill_result"):
+                            st.text_area("技能执行结果", intermediate["skill_result"], height=150)
                     with cols[1]:
                         if intermediate.get("rag_result"):
                             st.text_area("RAG 结果", intermediate["rag_result"], height=150)

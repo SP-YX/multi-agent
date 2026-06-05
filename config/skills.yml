@@ -1,0 +1,23 @@
+# ──────────────────────────────────────────────────────────
+# 技能系统配置（Skill System Configuration）
+# 在此注册所有技能模块及其参数
+# ──────────────────────────────────────────────────────────
+
+skills:
+  web_research:
+    enabled: true
+    module: skills.example_skills.web_research_skill
+    class: WebResearchSkill
+    description: "联网调研：搜索、整理、总结互联网信息"
+    keywords: ["搜索", "调研", "查询", "查找", "最新", "新闻", "资讯"]
+    config:
+      max_results: 5
+
+  file_analysis:
+    enabled: true
+    module: skills.example_skills.file_analysis_skill
+    class: FileAnalysisSkill
+    description: "文件分析：读取、统计、分析项目文件内容"
+    keywords: ["文件", "统计", "分析", "代码", "行数", "项目"]
+    config:
+      max_file_size_kb: 500

@@ -1,7 +1,7 @@
 """
 智能体模块 — 统一导出所有 Agent 类。
 
-包含 7 个 Agent：
+包含 8 个 Agent：
   - BaseAgent      抽象基类（不直接使用）
   - RouterAgent    路由器（问题分类）
   - PlanAgent      任务规划
@@ -9,6 +9,7 @@
   - SearchAgent    联网搜索
   - CoderAgent     代码执行
   - SummaryAgent   结果汇总
+  - SkillAgent     技能调度（Skill System）
 """
 
 from .base_agent import BaseAgent
@@ -18,6 +19,9 @@ from .rag_agent import RAGAgent
 from .search_agent import SearchAgent
 from .coder_agent import CoderAgent
 from .summary_agent import SummaryAgent
+from .eval_agent import EvalAgent
+
+from skills.skill_agent import SkillAgent
 
 __all__ = [
     "BaseAgent",
@@ -26,5 +30,7 @@ __all__ = [
     "RAGAgent",
     "SearchAgent",
     "CoderAgent",
-    "SummaryAgent"
+    "SummaryAgent",
+    "EvalAgent",
+    "SkillAgent",
 ]
