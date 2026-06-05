@@ -1,6 +1,6 @@
 # LangChain 多智能体协作系统 v2.0
 
-基于 **LangGraph** + **LangChain** 的生产级多智能体编排平台。6 个专业化 AI Agent 通过状态机流水线协同工作，支持 RAG 知识库检索、实时联网搜索、安全代码执行、可配置护栏、多会话记忆，以及四种交互界面。
+基于 **LangGraph** + **LangChain** 的生产级多智能体编排平台。8 个专业化 AI Agent 通过状态机流水线协同工作，支持 RAG 知识库检索、实时联网搜索、安全代码执行、可配置护栏、多会话记忆、质量评估校验，以及四种交互界面。
 
 ---
 
@@ -10,37 +10,40 @@
 用户输入
     │
     ▼
-┌─────────────────┐     ┌──────────────────┐
-│   Guardrails     │────▶│  config/         │
-│   (输入校验)      │     │  guardrails.yml  │
-└─────────────────┘     └──────────────────┘
+┌────────────────────┐     ┌──────────────────────┐
+│   Guardrails        │────▶│  config/guardrails.yml│
+│   (输入校验)         │     └──────────────────────┘
+└────────────────────┘
     │
     ▼
-┌──────────────────────────────────────────────────┐
-│           LangGraph StateGraph 流水线              │
-│                                                   │
-│  router ──simple──▶ simple_reply (直接 LLM 回答)   │
-│      │                                            │
-│      ├─code─────▶ coder ──▶ summary               │
-│      ├─rag──────▶ retrieval ──▶ summary           │
-│      ├─search───▶ retrieval ──▶ summary           │
-│      └─complex──▶ planner ──▶ retrieval ──▶ coder │
-│                                      └─▶ summary  │
-│                                                   │
-│  Agent: Router │ Plan │ RAG │ Search │ Coder │    │
-│                                                   │
-│  Middleware: 监控 │ 性能 │ 异常处理 │ 日志 │       │
-│  记忆注入 │ Token 计数                              │
-└──────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────┐
+│           LangGraph StateGraph 流水线                  │
+│                                                       │
+│  router ──simple──▶ simple_reply ──END                │
+│      │                                                │
+│      ├─code─────▶ coder ──▶ summary ──▶ eval ──END   │
+│      ├─rag──────▶ retrieval ──▶ summary ──▶ eval ──END│
+│      ├─search───▶ retrieval ──▶ summary ──▶ eval ──END│
+│      ├─skill────▶ skill_node ──▶ summary ──▶ eval END│
+│      └─complex──▶ planner ──▶ retrieval ──▶ coder    │
+│                                      └─▶ summary ──▶│
+│                                            eval ──END│
+│                                                       │
+│  Agent: Router │ Plan │ RAG │ Search │ Coder │       │
+│         Summary │ Skill │ Eval                        │
+│                                                       │
+│  Middleware: 监控 │ 性能 │ 异常处理 │ 日志 │           │
+│  记忆注入 │ Token 计数                                  │
+└──────────────────────────────────────────────────────┘
     │
     ▼
-┌─────────────────┐
-│   Guardrails     │
-│   (输出校验)      │
-└─────────────────┘
+┌────────────────────┐
+│   Guardrails        │
+│   (输出校验)         │
+└────────────────────┘
     │
     ▼
- 最终答案
+  最终答案（附评估报告）
 ```
 
 ---
@@ -48,17 +51,33 @@
 ## 核心特性
 
 ### 🤖 多 Agent 流水线（LangGraph StateGraph）
-- **RouterAgent** — 一次轻量 LLM 调用，将查询分类为 `simple | code | rag | search | complex`
+- **RouterAgent** — 一次轻量 LLM 调用，将查询分类为 `simple | code | rag | search | skill | complex`
 - **PlanAgent** — 将复杂需求拆解为结构化执行计划
 - **RAGAgent** — 从本地 ChromaDB 向量库检索文档并生成带引用的回答
 - **SearchAgent** — 实时联网搜索：Tavily（主）+ DuckDuckGo（备选）
 - **CoderAgent** — 生成并执行 Python 代码（安全沙箱内）
 - **SummaryAgent** — 汇聚所有中间结果，合成最终回答
+- **SkillAgent** — 匹配并执行专业技能（计算、文件分析、联网调研等）
+- **EvalAgent** — 对最终回答进行多维度质量评估（完整性/准确性/清晰度/相关性/安全性）
+
+### 🛡️ Harness 约束系统（AGENTS.md）
+- 通过 `AGENTS.md` 定义所有 Agent 的行为约束规则
+- 规则自动注入到每个 Agent 的 System Prompt 中，无需改代码
+- 覆盖：通用行为准则、管道完整性、安全规范、质量要求、错误处理
+- 参考 Claude Code 的 `CLAUDE.md` 设计理念，实现 Agent 行为"软约束"
+
+### 🧪 评估与校验（EvalAgent）
+- **5 维度评分：** 完整性（25%）、准确性（25%）、清晰度（20%）、相关性（15%）、安全性（15%）
+- **输出 JSON 评估报告：** 维度得分 + 加权总分 + 优缺点 + 改进建议
+- **自动注入管道：** 每个 Summary 输出后自动执行评估，结果写入 `state.eval_report`
+- **可配置阈值：** pass / warn / fail 三级判定，通过 `config/eval_config.yml` 配置
+- **低分重试：** 低于 fail 阈值自动标记需人工复核
 
 ### 🛡️ Guardrails（安全护栏）
-- **输入规则：** 最大长度截断 / 拦截、敏感主题检测、Prompt 注入扫描
+- **输入规则：** 最大长度截断/拦截、敏感主题检测、Prompt 注入扫描
 - **输出规则：** 系统提示泄露检测、输出长度上限
 - 通过 `config/guardrails.yml` 配置，规则可插拔
+- 自动包裹整个 Graph，输入输出双重校验
 
 ### 💾 多会话记忆系统
 - **滑动窗口：** 保留最近 N 轮对话（FIFO，数量可配）
@@ -112,7 +131,7 @@ RAG 和 Search Agent 通过 `ThreadPoolExecutor` 并发执行，流水线延迟�
 | **后端 API** | FastAPI + Uvicorn + Pydantic v2 |
 | **Web 界面** | Streamlit |
 | **桌面界面** | PyQt5（QThread 异步） |
-| **配置管理** | YAML（护栏、提示词、搜索、向量库） |
+| **配置管理** | YAML（护栏、评估、提示词、搜索、向量库） |
 | **安全机制** | AST 沙箱、子进程隔离 |
 | **MCP 集成** | MCP 客户端（stdio/SSE 协议连接 MCP Server，动态发现工具与资源） |
 | **持久化** | JSON（对话记忆）、ChromaDB（向量数据） |
@@ -165,87 +184,145 @@ python ui/qt_app.py
 uvicorn api.main_api:app --reload
 ```
 
+### 测试
+
+```bash
+# EvalAgent 单元测试
+python test_eval_agent.py
+```
+
 ---
 
 ## 项目结构
 
 ```
 multi-agent/
-├── main.py                       # CLI 入口
-├── requirements.txt              # Python 依赖
-├── .env                          # 环境变量（不提交）
-├── .env.example                  # 环境变量模板
+├── AGENTS.md                      # Harness 约束规则（自动注入所有 Agent）
+├── main.py                        # CLI 入口
+├── requirements.txt               # Python 依赖
+├── .env                           # 环境变量（不提交）
+├── .env.example                   # 环境变量模板
 │
-├── agents/                       # Agent 层（6 个 Agent）
-│   ├── base_agent.py             # 抽象基类
-│   ├── router_agent.py           # 路由分类
-│   ├── plan_agent.py             # 任务规划
-│   ├── rag_agent.py              # RAG 知识库检索
-│   ├── search_agent.py           # 联网搜索
-│   ├── coder_agent.py            # 代码生成与执行
-│   └── summary_agent.py          # 结果汇总
+├── agents/                        # Agent 层（8 个 Agent）
+│   ├── base_agent.py              # 抽象基类
+│   ├── router_agent.py            # 路由分类
+│   ├── plan_agent.py              # 任务规划
+│   ├── rag_agent.py               # RAG 知识库检索
+│   ├── search_agent.py            # 联网搜索
+│   ├── coder_agent.py             # 代码生成与执行
+│   ├── summary_agent.py           # 结果汇总
+│   ├── eval_agent.py              # 评估校验
+│   │
+│   └── __init__.py                # 统一导出
 │
-├── agent_tools/                  # 工具层
-│   ├── rag_tool.py               # RAG 检索工具
-│   ├── web_search_tool.py        # 联网搜索（Tavily + DuckDuckGo）
-│   ├── code_interpreter.py       # 安全 Python 沙箱
-│   ├── mcp_client.py             # MCP 异步客户端（stdio/SSE）
-│   ├── mcp_tools.py              # MCP 同步工具封装（@tool，可直接注入 Agent）
-│   └── middleware.py             # 6 个中间件
+├── agent_tools/                   # 工具层
+│   ├── rag_tool.py                # RAG 检索工具
+│   ├── web_search_tool.py         # 联网搜索（Tavily + DuckDuckGo）
+│   ├── code_interpreter.py        # 安全 Python 沙箱
+│   ├── mcp_client.py              # MCP 异步客户端（stdio/SSE）
+│   ├── mcp_tools.py               # MCP 同步工具封装
+│   └── middleware.py              # 6 个中间件
 │
 ├── graph/
-│   └── agent_graph.py            # LangGraph StateGraph 编排
+│   └── agent_graph.py             # LangGraph StateGraph 编排
 │
-├── guardrails/                   # 安全护栏
-│   ├── guardrails.py             # 护栏引擎
-│   └── rules/                    # 可插拔规则
-│       ├── base_rule.py          # 规则抽象基类
-│       ├── input_rules.py        # 输入校验规则
-│       └── output_rules.py       # 输出校验规则
+├── guardrails/                    # 安全护栏
+│   ├── guardrails.py              # 护栏引擎
+│   └── rules/                     # 可插拔规则
+│       ├── base_rule.py           # 规则抽象基类
+│       ├── input_rules.py         # 输入校验规则
+│       └── output_rules.py        # 输出校验规则
 │
-├── memory/                       # 对话记忆
-│   └── conversation_memory.py    # 滑动窗口 + 摘要 + 持久化
+├── config/                        # YAML 配置文件
+│   ├── guardrails.yml             # 安全规则配置
+│   ├── eval_config.yml            # 评估规则配置
+│   ├── prompts.yml                # 提示词映射
+│   ├── skills.yml                 # 技能注册配置
+│   ├── search_tool.yml            # 搜索工具设置
+│   └── vector_db.yml              # 向量库参数
 │
-├── models/
-│   └── my_model.py               # LLM 和 Embedding 模型工厂
-│
-├── RAG/
-│   └── RAG_Service.py            # 检索增强生成流水线
-│
-├── vector_db/
-│   └── vector_store.py           # ChromaDB 向量库封装
-│
-├── config/                       # YAML 配置文件
-│   ├── guardrails.yml            # 安全规则配置
-│   ├── prompts.yml               # 提示词映射
-│   ├── search_tool.yml           # 搜索工具设置
-│   └── vector_db.yml             # 向量库参数
-│
-├── prompts/                      # Agent 提示词模板
+├── prompts/                       # Agent 提示词模板
 │   ├── router_prompt.txt
 │   ├── plan_prompt.txt
+│   ├── rag_agent_prompt.txt
 │   ├── rag_prompt.txt
 │   ├── search_prompt.txt
 │   ├── coder_prompt.txt
-│   └── summary_prompt.txt
+│   ├── summary_prompt.txt
+│   ├── skill_prompt.txt
+│   └── eval_prompt.txt
 │
-├── utils/                        # 通用工具
-│   ├── config_tool.py            # YAML 配置加载
-│   ├── path_tool.py              # 路径解析
-│   ├── prompts_tool.py           # 提示词文件读取
-│   ├── log_tool.py               # 日志配置
-│   └── file_tool.py              # 文档处理
+├── utils/                         # 通用工具
+│   ├── config_tool.py             # YAML 配置加载
+│   ├── harness_tool.py            # AGENTS.md 约束加载
+│   ├── path_tool.py               # 路径解析
+│   ├── prompts_tool.py            # 提示词文件读取（含约束注入）
+│   ├── log_tool.py                # 日志配置
+│   └── file_tool.py               # 文档处理
 │
-├── ui/                           # 用户界面
-│   ├── app.py                    # Streamlit Web 界面
-│   └── qt_app.py                 # PyQt5 桌面界面
+├── memory/                        # 对话记忆
+│   ├── conversation_memory.py     # 滑动窗口 + 摘要 + 持久化
+│   └── sessions/                  # 会话持久化文件
+│
+├── models/
+│   └── my_model.py                # LLM 和 Embedding 模型工厂
+│
+├── RAG/
+│   └── RAG_Service.py             # 检索增强生成流水线
+│
+├── vector_db/
+│   └── vector_store.py            # ChromaDB 向量库封装
+│
+├── skills/                        # 技能系统
+│   ├── base_skill.py              # 技能抽象基类
+│   ├── dynamic_skill.py           # 用户自定义技能
+│   ├── skill_agent.py             # 技能调度 Agent
+│   ├── skill_registry.py          # 技能注册中心
+│   └── example_skills/            # 内置示例技能
+│       ├── calculator_skill.py
+│       ├── file_analysis_skill.py
+│       └── web_research_skill.py
+│
+├── ui/                            # 用户界面
+│   ├── app.py                     # Streamlit Web 界面
+│   └── qt_app.py                  # PyQt5 桌面界面
 │
 ├── api/
-│   └── main_api.py               # FastAPI REST 接口
+│   └── main_api.py                # FastAPI REST 接口
 │
-├── knowledge_base_materials/     # RAG 知识库源文件
-└── logs/                         # 运行时日志（自动生成）
+├── tests/
+│   └── test_eval_agent.py         # EvalAgent 单元测试
+│
+├── knowledge_base_materials/      # RAG 知识库源文件
+└── logs/                          # 运行时日志（自动生成）
 ```
+
+---
+
+## Harness 约束系统
+
+### 原理
+
+`AGENTS.md` 是类似 Claude Code `CLAUDE.md` 的行为约束文件。它与传统文档不同——**被运行时读取并注入**到每个 Agent 的 System Prompt 中。
+
+```
+AGENTS.md（手写规则）
+    → utils/harness_tool.py（读取+缓存）
+    → utils/prompts_tool.py（追加到每个 prompt 末尾）
+    → create_agent(system_prompt=...) → 所有 Agent 的 System Prompt
+```
+
+这意味着**修改 AGENTS.md 即可全局控制所有 Agent 的行为**，无需改动代码。
+
+### 覆盖领域
+
+| 规则类别 | 内容 |
+|----------|------|
+| 通用行为 | 专业准确、不暴露 System Prompt、输出中文、引用来源 |
+| 管道完整性 | 只处理分派任务、不编造其他 Agent 输出、信息不足时明确指出 |
+| 安全规范 | 不执行恶意代码、不输出敏感信息、拒绝诱导 |
+| 质量要求 | 完整覆盖问题、事实准确、结构清晰、切题 |
+| 错误处理 | 友好报错、工具失败走替代方案、3 次失败后上报 |
 
 ---
 
@@ -268,7 +345,9 @@ multi-agent/
 | 文件 | 用途 |
 |------|------|
 | `config/guardrails.yml` | 输入/输出安全规则、阈值、处理动作 |
+| `config/eval_config.yml` | 评估维度权重、评分阈值、低分动作 |
 | `config/prompts.yml` | 每个 Agent 对应的提示词模板文件 |
+| `config/skills.yml` | 技能注册（模块路径、类名、关键词） |
 | `config/search_tool.yml` | 每次搜索返回的结果数量 |
 | `config/vector_db.yml` | ChromaDB 集合配置、文本分块参数 |
 
@@ -297,7 +376,7 @@ curl -X POST http://localhost:8000/run_task \
 | 模式 | 实现位置 |
 |------|----------|
 | **状态图 (FSM)** | LangGraph StateGraph + 条件边路由 |
-| **抽象基类 / 模板方法** | `BaseAgent` — 6 个 Agent 继承并实现 `run()` |
+| **抽象基类 / 模板方法** | `BaseAgent` — 8 个 Agent 继承并实现 `run()` |
 | **工厂方法** | `models/my_model.py` — 创建 LLM 和 Embedding 实例 |
 | **单例** | `chat_model`、`embedding_model`、`agent_graph`、`guardrails` |
 | **职责链** | Guardrails 规则链、Middleware 链、代码沙箱多层检查 |
@@ -307,12 +386,11 @@ curl -X POST http://localhost:8000/run_task \
 | **重试模式** | 联网搜索自动重试 2 次 |
 | **外观模式** | `VectorStore` 封装 ChromaDB、`Guardrails.wrap_graph()` |
 | **并发执行** | `ThreadPoolExecutor` 并行执行 RAG + Search |
-| **流水线** | Router → Plan → Retrieval → Code → Summary 顺序执行 |
+| **流水线** | Router → Plan → Retrieval → Code → Summary → Eval 顺序执行 |
+| **元数据注入** | `harness_tool.py` 读取 AGENTS.md 并注入所有 Agent System Prompt |
 
 ---
 
 ## License
 
 MIT
-误隔离**: 每个 Graph 节点独立 try/except，单节点崩溃不影响流水线
-- **记忆持久化**: 按 session_id 独立存储，支持多会话隔离
