@@ -142,7 +142,7 @@ def main():
 
 print("=" * 60)
 print("=" * 60)
-
+print("  [规划结果]")
     print("=" * 60)
     print("  LangChain 多智能体协作系统 v2.0")
     print(f"  Session: {session_id}")
